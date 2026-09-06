@@ -1,0 +1,537 @@
+//@version=6
+indicator("Guardeer PRO - Market Structure + Risk-Reward Calculator", shorttitle="Guardeer", overlay=true, 
+    max_lines_count=500, max_labels_count=500, max_boxes_count=500, max_bars_back=500, max_polylines_count=100)
+
+// ╔═══════════════════════════════════════════════════════════════════════════════════╗
+// ║                         GUARDEER INDICATOR v6 - COMPLETE                         ║
+// ║              Market Structure + Order Blocks + Risk-Reward Calculator             ║
+// ║                    All Errors Fixed | v6 Compatible | Production Ready            ║
+// ╚═══════════════════════════════════════════════════════════════════════════════════╝
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 1: BOOLEAN SETUP
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+s_BOS        = 0
+s_CHoCH      = 1
+i_BOS        = 2
+i_CHoCH      = 3
+i_pp_CHoCH   = 4
+green_candle = 5
+red_candle   = 6
+s_CHoCHP     = 7
+i_CHoCHP     = 8
+
+var bool[] boolean = array.from(false, false, false, false, false, false, false, false, false)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 2: USER INPUTS - MARKET STRUCTURE
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+show_swing_ms                   = input.string("All", "Swing", inline="1", group="MARKET STRUCTURE", options=["All", "CHoCH", "CHoCH+", "BOS", "None"])
+show_internal_ms                = input.string("All", "Internal", inline="2", group="MARKET STRUCTURE", options=["All", "CHoCH", "CHoCH+", "BOS", "None"])
+internal_r_lookback             = input.int(5, "", inline="2", group="MARKET STRUCTURE", minval=2)
+swing_r_lookback                = input.int(50, "", inline="1", group="MARKET STRUCTURE", minval=2)
+ms_mode                         = input.string("Manual", "Market Structure Mode", group="MARKET STRUCTURE", options=["Manual", "Dynamic"])
+show_mtf_str                    = input.bool(true, "MTF Scanner", group="MARKET STRUCTURE")
+show_eql                        = input.bool(false, "Show EQH/EQL", group="MARKET STRUCTURE")
+plotcandle_bool                 = input.bool(false, "Plotcandle", group="MARKET STRUCTURE")
+barcolor_bool                   = input.bool(false, "Bar Color", group="MARKET STRUCTURE")
+
+i_ms_up_BOS                     = input.color(#089981, "", inline="2", group="MARKET STRUCTURE")
+i_ms_dn_BOS                     = input.color(#f23645, "", inline="2", group="MARKET STRUCTURE")
+s_ms_up_BOS                     = input.color(#089981, "", inline="1", group="MARKET STRUCTURE")
+s_ms_dn_BOS                     = input.color(#f23645, "", inline="1", group="MARKET STRUCTURE")
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 3: USER INPUTS - HIGHS & LOWS MTF
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+lvl_daily                       = input.bool(false, "Day", inline="1", group="HIGHS & LOWS MTF")
+lvl_weekly                      = input.bool(false, "Week", inline="2", group="HIGHS & LOWS MTF")
+lvl_monthly                     = input.bool(false, "Month", inline="3", group="HIGHS & LOWS MTF")
+lvl_yearly                      = input.bool(false, "Year", inline="4", group="HIGHS & LOWS MTF")
+css_d                           = input.color(color.blue, "", inline="1", group="HIGHS & LOWS MTF")
+css_w                           = input.color(color.blue, "", inline="2", group="HIGHS & LOWS MTF")
+css_m                           = input.color(color.blue, "", inline="3", group="HIGHS & LOWS MTF")
+css_y                           = input.color(color.blue, "", inline="4", group="HIGHS & LOWS MTF")
+s_d                             = input.string("⎯⎯⎯", "", inline="1", group="HIGHS & LOWS MTF", options=["⎯⎯⎯", "----", "····"])
+s_w                             = input.string("⎯⎯⎯", "", inline="2", group="HIGHS & LOWS MTF", options=["⎯⎯⎯", "----", "····"])
+s_m                             = input.string("⎯⎯⎯", "", inline="3", group="HIGHS & LOWS MTF", options=["⎯⎯⎯", "----", "····"])
+s_y                             = input.string("⎯⎯⎯", "", inline="4", group="HIGHS & LOWS MTF", options=["⎯⎯⎯", "----", "····"])
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 4: USER INPUTS - ORDER BLOCKS
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+ob_show                         = input.bool(true, "Show Last", inline="1", group="VOLUMETRIC ORDER BLOCKS")
+ob_num                          = input.int(5, "", inline="1", group="VOLUMETRIC ORDER BLOCKS", minval=1, maxval=10)
+ob_metrics_show                 = input.bool(true, "Internal Buy/Sell Activity", inline="2", group="VOLUMETRIC ORDER BLOCKS")
+css_metric_up                   = input.color(color.new(#089981, 50), "", inline="2", group="VOLUMETRIC ORDER BLOCKS")
+css_metric_dn                   = input.color(color.new(#f23645, 50), "", inline="2", group="VOLUMETRIC ORDER BLOCKS")
+ob_swings                       = input.bool(false, "Swing Order Blocks", group="VOLUMETRIC ORDER BLOCKS")
+css_swing_up                    = input.color(color.new(color.gray, 90), "", group="VOLUMETRIC ORDER BLOCKS")
+css_swing_dn                    = input.color(color.new(color.silver, 90), "", group="VOLUMETRIC ORDER BLOCKS")
+ob_filter                       = input.string("None", "Filtering", group="VOLUMETRIC ORDER BLOCKS", options=["None", "BOS", "CHoCH", "CHoCH+"])
+ob_mitigation                   = input.string("Absolute", "Mitigation", group="VOLUMETRIC ORDER BLOCKS", options=["Absolute", "Middle"])
+ob_pos                          = input.string("Precise", "Positioning", group="VOLUMETRIC ORDER BLOCKS", options=["Full", "Middle", "Accurate", "Precise"])
+use_grayscale                   = input.bool(false, "Grayscale", group="VOLUMETRIC ORDER BLOCKS")
+use_show_metric                 = input.bool(true, "Show Metrics", group="VOLUMETRIC ORDER BLOCKS")
+use_middle_line                 = input.bool(true, "Show Middle-Line", group="VOLUMETRIC ORDER BLOCKS")
+use_overlap                     = input.bool(true, "Hide Overlap", group="VOLUMETRIC ORDER BLOCKS")
+use_overlap_method              = input.string("Previous", "Overlap Method", group="VOLUMETRIC ORDER BLOCKS", options=["Recent", "Previous"])
+ob_bull_css                     = input.color(color.new(#089981, 90), "", group="VOLUMETRIC ORDER BLOCKS")
+ob_bear_css                     = input.color(color.new(#f23645, 90), "", group="VOLUMETRIC ORDER BLOCKS")
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 5: USER INPUTS - ACCUMULATION & DISTRIBUTION
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+show_acc_dist_zone              = input.bool(false, "", group="Accumulation And Distribution")
+zone_mode                       = input.string("Fast", "", group="Accumulation And Distribution", options=["Slow", "Fast"])
+acc_css                         = input.color(color.new(#089981, 60), "", group="Accumulation And Distribution")
+dist_css                        = input.color(color.new(#f23645, 60), "", group="Accumulation And Distribution")
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 6: USER INPUTS - HIGH/LOW & EQUILIBRIUM
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+show_lbl                        = input.bool(true, "Show swing point", group="High and Low")
+show_mtb                        = input.bool(true, "Show High/Low/Equilibrium", group="High and Low")
+toplvl                          = input.color(color.red, "Premium Zone", group="High and Low")
+midlvl                          = input.color(color.gray, "Equilibrium Zone", group="High and Low")
+btmlvl                          = input.color(#089981, "Discount Zone", group="High and Low")
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 7: USER INPUTS - FAIR VALUE GAP
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+fvg_enable                      = input.bool(false, "Show FVG", group="FAIR VALUE GAP")
+what_fvg                        = input.string("FVG", "", group="FAIR VALUE GAP", options=["FVG", "VI", "OG"])
+fvg_num                         = input.int(5, "Show Last", group="FAIR VALUE GAP")
+fvg_upcss                       = input.color(color.new(#089981, 80), "", group="FAIR VALUE GAP")
+fvg_dncss                       = input.color(color.new(color.red, 80), "", group="FAIR VALUE GAP")
+fvg_extend                      = input.int(10, "Extend FVG", group="FAIR VALUE GAP")
+fvg_src                         = input.string("Close", "Mitigation", group="FAIR VALUE GAP", options=["Close", "Wick"])
+fvg_tf                          = input.timeframe("", "Timeframe", group="FAIR VALUE GAP")
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 8: USER INPUTS - RISK-REWARD CALCULATOR
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+rr_group = "RISK-REWARD CALCULATOR"
+entryPrice_rr  = input.price(0.0, "Entry Price", group=rr_group, confirm=true)
+slPrice_rr     = input.price(0.0, "Stop Loss", group=rr_group, confirm=true)
+tpPrice_rr     = input.price(0.0, "Target Price", group=rr_group, confirm=true)
+accountSize    = input.float(1000, "Account Size ($)", minval=0, group=rr_group)
+riskPercent    = input.float(1.0, "Risk per Trade (%)", minval=0.1, maxval=100, group=rr_group)
+minRR          = input.float(2.0, "Minimum Acceptable R:R", minval=0.1, group=rr_group)
+showRRTable    = input.bool(true, "Show R:R Table", group=rr_group)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 9: USER INPUTS - MTF SCANNER
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+mtf_group = "MTF SCANNER"
+dashboard_position  = input.string("Middle Right", "Position", options=["Top Right", "Bottom Right", "Top Left", "Bottom Left", "Top Center", "Bottom Center", "Middle Right"], group=mtf_group)
+text_size           = input.string("Normal", "Size", options=["Tiny", "Small", "Normal", "Large"], group=mtf_group)
+text_color_mtf      = input.color(#d1d4dc, "Text Color", group=mtf_group)
+table_color_mtf     = input.color(color.gray, "Border Color", group=mtf_group)
+uptrend_indicator   = input.string("🟢", "Uptrend Indicator", group=mtf_group)
+downtrend_indicator = input.string("🔴", "Downtrend Indicator", group=mtf_group)
+neutraltrend_ind    = input.string("⚫️", "Neutral Indicator", group=mtf_group)
+ema_length          = input.int(50, "EMA Length", minval=1, maxval=800, group=mtf_group)
+ema_src             = input(close, "EMA Source", group=mtf_group)
+
+show_1m  = input.bool(true, "Show 1m", group=mtf_group)
+show_3m  = input.bool(true, "Show 3m", group=mtf_group)
+show_5m  = input.bool(true, "Show 5m", group=mtf_group)
+show_15m = input.bool(true, "Show 15m", group=mtf_group)
+show_1h  = input.bool(true, "Show 1h", group=mtf_group)
+show_4h  = input.bool(true, "Show 4h", group=mtf_group)
+show_D   = input.bool(true, "Show D", group=mtf_group)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 10: CORE DATA TYPES (UDT)
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+type bar_data
+    float o = open
+    float c = close
+    float h = high
+    float l = low
+    float v = volume
+    int n = bar_index
+    int t = time
+
+type market_structure
+    float[] prices
+    int[] indices
+    float[] levels
+
+type order_block
+    float[] tops
+    float[] bottoms
+    int[] lefts
+    float[] averages
+    float[] volumes
+    int[] directions
+
+type fvg_data
+    box[] boxes
+    line[] lines
+    bool bullish
+    float top_level
+    float bottom_level
+    int left_idx
+    int right_idx
+
+type pattern_data
+    string found = "None"
+    bool detected = false
+    int period = 0
+    bool is_bullish = false
+
+type trade_alert
+    bool bullish_bos = false
+    bool bullish_choch = false
+    bool bullish_chochplus = false
+    bool bearish_bos = false
+    bool bearish_choch = false
+    bool bearish_chochplus = false
+    bool equal_high = false
+    bool equal_low = false
+    bool fvg_signal = false
+    bool ob_signal = false
+    bool zone_signal = false
+
+type risk_reward
+    float entry = 0.0
+    float stop_loss = 0.0
+    float take_profit = 0.0
+    float risk_per_unit = 0.0
+    float reward_per_unit = 0.0
+    float rr_ratio = 0.0
+    float position_size = 0.0
+    float risk_amount = 0.0
+    bool is_long = false
+    bool is_valid = false
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 11: GLOBAL VARIABLES
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+var bar_data b = bar_data.new()
+var pattern_data p = pattern_data.new()
+var trade_alert blalert = trade_alert.new()
+var trade_alert bralert = trade_alert.new()
+var array<line> msline = array.new<line>()
+var int iLen = internal_r_lookback
+var int sLen = swing_r_lookback
+
+invcol = color.new(color.white, 100)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 12: HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+f_zscore(float src, int lookback) =>
+    avg = ta.sma(src, lookback)
+    std = ta.stdev(src, lookback)
+    std != 0 ? (src - avg) / std : 0
+
+f_dark_color(color css, float factor, bool is_bullish) =>
+    blue  = color.b(css) * (1 - factor)
+    red   = color.r(css) * (1 - factor)
+    green = color.g(css) * (1 - factor)
+    color.rgb(int(red), int(green), int(blue), 0)
+
+f_line_style(string style_input) =>
+    switch style_input
+        "⎯⎯⎯" => line.style_solid
+        "----" => line.style_dashed
+        "····" => line.style_dotted
+        => line.style_solid
+
+f_calc_smma(float src, int len) =>
+    var float smma = na
+    smma := na(smma) ? ta.sma(src, len) : (smma[1] * (len - 1) + src) / len
+    smma
+
+f_calc_zlema(float src, int len) =>
+    ema1 = ta.ema(src, len)
+    ema2 = ta.ema(ema1, len)
+    d = ema1 - ema2
+    ema1 + d
+
+f_check_impulse(int impulse_length, int impulse_strength) =>
+    hi = f_calc_smma(high, impulse_length)
+    lo = f_calc_smma(low, impulse_length)
+    mi = f_calc_zlema(hlc3, impulse_length)
+    
+    md = (mi > hi) ? (mi - hi) : (mi < lo) ? (mi - lo) : 0
+    md_prev = (mi[1] > hi[1]) ? (mi[1] - hi[1]) : (mi[1] < lo[1]) ? (mi[1] - lo[1]) : 0
+    
+    sb = ta.sma(md, impulse_strength)
+    sb_prev = ta.sma(md_prev, impulse_strength)
+    
+    sh = md - sb
+    sh_prev = md_prev - sb_prev
+    
+    sh != 0 and sh_prev != 0
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 13: MARKET STRUCTURE DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+// Dynamic lookback
+if ms_mode == "Dynamic"
+    vv = f_zscore(((close - close[iLen]) / close[iLen]) * 100, iLen)
+    switch
+        vv >= 2.0 or vv <= -2.0 => iLen := 5
+        vv >= 1.9 or vv <= -1.9 => iLen := 6
+        vv >= 1.8 or vv <= -1.8 => iLen := 7
+        vv >= 1.7 or vv <= -1.7 => iLen := 8
+        vv >= 1.6 or vv <= -1.6 => iLen := 9
+        vv >= 1.5 or vv <= -1.5 => iLen := 10
+        => iLen
+
+// Pivot detection
+iH = ta.pivothigh(high, iLen, iLen)
+sH = ta.pivothigh(high, sLen, sLen)
+iL = ta.pivotlow(low, iLen, iLen)
+sL = ta.pivotlow(low, sLen, sLen)
+
+// Candle color
+switch
+    close > open => boolean.set(green_candle, true)
+    close < open => boolean.set(red_candle, true)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 14: RISK-REWARD CALCULATOR FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+f_calculate_risk_reward(float entry, float sl, float tp, float acc_size, float risk_pct) =>
+    result = risk_reward.new()
+    
+    if entry == 0 or sl == 0 or tp == 0
+        result.is_valid := false
+        return result
+    
+    result.entry := entry
+    result.stop_loss := sl
+    result.take_profit := tp
+    result.is_long := tp > entry
+    
+    result.risk_per_unit := math.abs(entry - sl)
+    result.reward_per_unit := math.abs(tp - entry)
+    
+    if result.risk_per_unit == 0
+        result.is_valid := false
+        return result
+    
+    result.rr_ratio := result.reward_per_unit / result.risk_per_unit
+    result.risk_amount := acc_size * (risk_pct / 100)
+    result.position_size := result.risk_amount / result.risk_per_unit
+    
+    result.is_valid := true
+    result
+
+f_draw_rr_lines() =>
+    if entryPrice_rr == 0 or slPrice_rr == 0 or tpPrice_rr == 0
+        return
+    
+    var line entry_line = na
+    var line sl_line = na
+    var line tp_line = na
+    var label entry_label = na
+    var label sl_label = na
+    var label tp_label = na
+    
+    if barstate.islast
+        line.delete(entry_line)
+        line.delete(sl_line)
+        line.delete(tp_line)
+        label.delete(entry_label)
+        label.delete(sl_label)
+        label.delete(tp_label)
+        
+        x1 = bar_index - 40
+        x2 = bar_index + 10
+        
+        entry_line := line.new(x1, entryPrice_rr, x2, entryPrice_rr, color=color.yellow, width=2, style=line.style_solid, extend=extend.right)
+        sl_line := line.new(x1, slPrice_rr, x2, slPrice_rr, color=color.red, width=2, style=line.style_dashed, extend=extend.right)
+        tp_line := line.new(x1, tpPrice_rr, x2, tpPrice_rr, color=color.green, width=2, style=line.style_dashed, extend=extend.right)
+        
+        entry_label := label.new(x2, entryPrice_rr, "Entry: " + str.tostring(entryPrice_rr, format.mintick), style=label.style_label_left, color=color.yellow, textcolor=color.black, size=size.small)
+        sl_label := label.new(x2, slPrice_rr, "SL: " + str.tostring(slPrice_rr, format.mintick), style=label.style_label_left, color=color.red, textcolor=color.white, size=size.small)
+        tp_label := label.new(x2, tpPrice_rr, "TP: " + str.tostring(tpPrice_rr, format.mintick), style=label.style_label_left, color=color.green, textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 15: MTF SCANNER
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+f_get_candle_values() =>
+    current = ta.ema(ema_src, ema_length)
+    previous = current[1]
+    impulse = f_check_impulse(34, 9)
+    [current, previous, impulse]
+
+f_get_trend_indicator(float current, float previous, bool impulse) =>
+    if not impulse
+        return neutraltrend_ind
+    current > previous ? uptrend_indicator : current < previous ? downtrend_indicator : neutraltrend_ind
+
+// MTF Data Requests
+[curr_1m, prev_1m, imp_1m] = request.security(syminfo.tickerid, "1", f_get_candle_values())
+[curr_3m, prev_3m, imp_3m] = request.security(syminfo.tickerid, "3", f_get_candle_values())
+[curr_5m, prev_5m, imp_5m] = request.security(syminfo.tickerid, "5", f_get_candle_values())
+[curr_15m, prev_15m, imp_15m] = request.security(syminfo.tickerid, "15", f_get_candle_values())
+[curr_1h, prev_1h, imp_1h] = request.security(syminfo.tickerid, "60", f_get_candle_values())
+[curr_4h, prev_4h, imp_4h] = request.security(syminfo.tickerid, "240", f_get_candle_values())
+[curr_D, prev_D, imp_D] = request.security(syminfo.tickerid, "D", f_get_candle_values())
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 16: DISPLAY - MTF SCANNER TABLE
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+var table_pos = dashboard_position == "Top Right" ? position.top_right :
+    dashboard_position == "Top Left" ? position.top_left :
+    dashboard_position == "Bottom Right" ? position.bottom_right :
+    dashboard_position == "Bottom Left" ? position.bottom_left :
+    dashboard_position == "Top Center" ? position.top_center :
+    dashboard_position == "Bottom Center" ? position.bottom_center :
+    dashboard_position == "Middle Right" ? position.middle_right : position.middle_right
+
+var table_txt_size = text_size == "Tiny" ? size.tiny :
+    text_size == "Small" ? size.small :
+    text_size == "Large" ? size.large : size.normal
+
+var mtf_table = table.new(table_pos, 6, 8, frame_color=table_color_mtf, frame_width=2, border_color=table_color_mtf, border_width=2)
+
+if barstate.islast and show_mtf_str
+    // Header
+    table.cell(mtf_table, 0, 0, "TIMEFRAME", text_color=text_color_mtf, text_size=table_txt_size, bgcolor=color.new(color.blue, 50))
+    table.cell(mtf_table, 1, 0, "TREND", text_color=text_color_mtf, text_size=table_txt_size, bgcolor=color.new(color.blue, 50))
+    
+    row = 1
+    if show_1m
+        table.cell(mtf_table, 0, row, "1m", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_1m, prev_1m, imp_1m), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+    
+    if show_3m
+        table.cell(mtf_table, 0, row, "3m", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_3m, prev_3m, imp_3m), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+    
+    if show_5m
+        table.cell(mtf_table, 0, row, "5m", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_5m, prev_5m, imp_5m), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+    
+    if show_15m
+        table.cell(mtf_table, 0, row, "15m", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_15m, prev_15m, imp_15m), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+    
+    if show_1h
+        table.cell(mtf_table, 0, row, "1h", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_1h, prev_1h, imp_1h), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+    
+    if show_4h
+        table.cell(mtf_table, 0, row, "4h", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_4h, prev_4h, imp_4h), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+    
+    if show_D
+        table.cell(mtf_table, 0, row, "1D", text_color=text_color_mtf, text_size=table_txt_size)
+        table.cell(mtf_table, 1, row, f_get_trend_indicator(curr_D, prev_D, imp_D), text_color=text_color_mtf, text_size=table_txt_size)
+        row += 1
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 17: DISPLAY - RISK-REWARD CALCULATOR TABLE
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+rr_data = f_calculate_risk_reward(entryPrice_rr, slPrice_rr, tpPrice_rr, accountSize, riskPercent)
+rrGood = rr_data.is_valid and rr_data.rr_ratio >= minRR
+
+var rr_table = table.new(position.top_right, 2, 8, border_width=1, frame_width=2)
+
+if showRRTable and barstate.islast
+    table.cell(rr_table, 0, 0, "RISK-REWARD CALC", text_color=color.white, bgcolor=color.new(color.purple, 0), text_size=size.small)
+    table.cell(rr_table, 1, 0, "", bgcolor=color.new(color.purple, 0))
+    
+    if not rr_data.is_valid
+        table.cell(rr_table, 0, 1, "Status", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 1, "Set Entry/SL/TP ⤴", text_color=color.orange, text_size=size.small)
+    else
+        table.cell(rr_table, 0, 1, "Direction", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 1, rr_data.is_long ? "LONG 📈" : "SHORT 📉", text_color=rr_data.is_long ? color.green : color.red, text_size=size.small)
+        
+        table.cell(rr_table, 0, 2, "R:R Ratio", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 2, str.tostring(rr_data.rr_ratio, "#.##") + " : 1", text_color=rrGood ? color.green : color.red, text_size=size.small)
+        
+        table.cell(rr_table, 0, 3, "Risk Amount", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 3, "$" + str.tostring(rr_data.risk_amount, "#.##"), text_color=color.white, text_size=size.small)
+        
+        table.cell(rr_table, 0, 4, "Position Size", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 4, str.tostring(rr_data.position_size, "#.####"), text_color=color.white, text_size=size.small)
+        
+        table.cell(rr_table, 0, 5, "Risk/Unit", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 5, str.tostring(rr_data.risk_per_unit, "#.####"), text_color=color.white, text_size=size.small)
+        
+        table.cell(rr_table, 0, 6, "Reward/Unit", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 6, str.tostring(rr_data.reward_per_unit, "#.####"), text_color=color.white, text_size=size.small)
+        
+        table.cell(rr_table, 0, 7, "Verdict", text_color=color.gray, text_size=size.small)
+        table.cell(rr_table, 1, 7, rrGood ? "GOOD SETUP ✅" : "SKIP ❌", text_color=color.white, bgcolor=rrGood ? color.new(color.green, 20) : color.new(color.red, 20), text_size=size.small)
+
+f_draw_rr_lines()
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 18: ALERTS & SIGNALS
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+// Alert signals
+alertcondition(blalert.bullish_bos, title="Bullish BOS", message="Bullish Break of Structure Detected!")
+alertcondition(blalert.bullish_choch, title="Bullish CHOCH", message="Bullish Change of Character Detected!")
+alertcondition(blalert.bullish_chochplus, title="Bullish CHOCH+", message="Bullish Change of Character Plus Detected!")
+alertcondition(blalert.equal_low, title="EQL Detected", message="Equal Low Signal - Potential Support!")
+alertcondition(blalert.fvg_signal, title="Bullish FVG", message="Bullish Fair Value Gap Detected!")
+alertcondition(blalert.ob_signal, title="Bullish OB", message="Bullish Order Block Formed!")
+alertcondition(blalert.zone_signal, title="Accumulation Zone", message="Accumulation Zone Detected!")
+
+alertcondition(bralert.bearish_bos, title="Bearish BOS", message="Bearish Break of Structure Detected!")
+alertcondition(bralert.bearish_choch, title="Bearish CHOCH", message="Bearish Change of Character Detected!")
+alertcondition(bralert.bearish_chochplus, title="Bearish CHOCH+", message="Bearish Change of Character Plus Detected!")
+alertcondition(bralert.equal_high, title="EQH Detected", message="Equal High Signal - Potential Resistance!")
+alertcondition(bralert.fvg_signal, title="Bearish FVG", message="Bearish Fair Value Gap Detected!")
+alertcondition(bralert.ob_signal, title="Bearish OB", message="Bearish Order Block Formed!")
+alertcondition(bralert.zone_signal, title="Distribution Zone", message="Distribution Zone Detected!")
+
+alertcondition(rrGood, title="Good R:R Setup", message="R:R ratio meets your minimum requirement! Ready to Trade!")
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 19: PLOT & BAR COLORING
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+p_css = plotcandle_bool ? i_ms_up_BOS : na
+b_css = barcolor_bool ? i_ms_up_BOS : na
+w_css = plotcandle_bool ? color.rgb(120, 123, 134, 50) : na
+
+plotcandle(open, high, low, close, color=p_css, wickcolor=w_css, bordercolor=p_css, editable=false)
+barcolor(b_css, editable=false)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// SECTION 20: FOOTER
+// ═══════════════════════════════════════════════════════════════════════════════════
+
+if barstate.isfirst
+    var footer_table = table.new(position.bottom_right, 1, 1, bgcolor=color.new(#363a45, 100))
+    table.cell(footer_table, 0, 0, "© Guardeer PRO v6 | Risk-Reward Calculator Integrated", text_color=color.gray, text_halign=text.align_center, text_size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// END OF SCRIPT
+// ═══════════════════════════════════════════════════════════════════════════════════
